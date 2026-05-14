@@ -2,77 +2,339 @@ using UnityEngine;
 
 public class ObstacleGenerator : MonoBehaviour
 {
-    // Structure to define a spawnable object
     [System.Serializable]
     public struct SpawnableObject
     {
         public GameObject prefab;
+
         [Range(0f, 1f)]
         public float spawnChance;
     }
 
-    // Array of spawnable objects
-    public SpawnableObject[] objects;
-
-    // Minimum and maximum spawn rates
-    public float minSpawnRate = 1f;
-    public float maxSpawnRate = 2f;
-
-    // Variable to store the last spawned object
-    private GameObject lastSpawnedObject;
-
-    // Called when the script instance is being loaded and enabled
-    private void OnEnable()
+    [System.Serializable]
+    public struct SpawnableItem
     {
-        // Invoke the Spawn method after a random delay within the specified range
-        Invoke(nameof(Spawn), Random.Range(minSpawnRate, maxSpawnRate));
+        public GameObject prefab;
+        public ItemType itemType;
+
+        [Range(0f, 1f)]
+        public float spawnChance;
     }
 
-    // Called when the script instance is being disabled
+    [Header("Obstacles")]
+    public SpawnableObject[] objects;
+
+    [Header("Items")]
+    public SpawnableItem[] items;
+
+    [Header("Item Spawn Settings")]
+    public float itemSpawnInterval = 40f;
+
+    [Tooltip("Khoảng cách tối thiểu sau obstacle")]
+    public float minDistanceAfterObstacle = 5f;
+
+    [Tooltip("Khoảng cách tối đa sau obstacle")]
+    public float maxDistanceAfterObstacle = 8f;
+
+    [Tooltip("Độ cao thấp nhất player có thể nhặt")]
+    public float minItemHeight = 1.0f;
+
+    [Tooltip("Độ cao cao nhất player có thể nhặt")]
+    public float maxItemHeight = 2.0f;
+
+    [Header("Item Collision Check")]
+    public float itemCheckRadius = 1f;
+
+    public Transform itemParent;
+
+    // =====================================================
+    // NEW SPAWN SYSTEM
+    // =====================================================
+
+    [Header("Dynamic Difficulty")]
+
+    [Tooltip("Khoảng cách obstacle khi game dễ")]
+    public float easySpawnDistance = 14f;
+
+    [Tooltip("Khoảng cách obstacle khi game khó")]
+    public float hardSpawnDistance = 7f;
+
+    [Tooltip("Game speed bắt đầu tăng difficulty")]
+    public float minDifficultySpeed = 5f;
+
+    [Tooltip("Game speed đạt max difficulty")]
+    public float maxDifficultySpeed = 20f;
+
+    [Tooltip("Khoảng cách an toàn tối thiểu")]
+    public float absoluteMinDistance = 6f;
+
+    [Tooltip("Stress mode giảm khoảng cách")]
+    public float stressDistanceMultiplier = 0.8f;
+
+    // Runtime
+    private float distanceCounter;
+    private float nextSpawnDistance;
+
+    private GameObject lastSpawnedObject;
+    private Vector3 lastObstaclePosition;
+    private bool hasSpawnedObstacle;
+
+    // =====================================================
+    // UNITY
+    // =====================================================
+
+    private void OnEnable()
+    {
+        distanceCounter = 0f;
+
+        GenerateNextSpawnDistance();
+
+        InvokeRepeating(
+            nameof(SpawnRandomItem),
+            itemSpawnInterval,
+            itemSpawnInterval
+        );
+    }
+
     private void OnDisable()
     {
-        // Cancel any ongoing Invoke calls to prevent unwanted spawns
         CancelInvoke();
     }
 
-    // Method to spawn obstacles based on their spawn chances
-    private void Spawn()
+    private void Update()
     {
-        // Generate a random spawn chance value
-        float spawnChance = Random.value;
+        if (GameManager.Instance == null) return;
 
-        // Iterate through the array of spawnable objects
-        foreach (var obj in objects)
+        if (GameManager.Instance.isGameOver) return;
+
+        float speed = GameManager.Instance.GetFinalGameSpeed();
+
+        // =====================================================
+        // DISTANCE BASED SPAWN
+        // =====================================================
+
+        distanceCounter += speed * Time.deltaTime;
+
+        if (distanceCounter >= nextSpawnDistance)
         {
-            // Check if the generated spawn chance is less than the object's spawn chance
-            if (spawnChance < obj.spawnChance)
+            SpawnObstacle();
+
+            distanceCounter = 0f;
+
+            GenerateNextSpawnDistance();
+        }
+    }
+
+    // =====================================================
+    // GENERATE NEXT DISTANCE
+    // =====================================================
+
+    private void GenerateNextSpawnDistance()
+    {
+        if (GameManager.Instance == null)
+        {
+            nextSpawnDistance = easySpawnDistance;
+            return;
+        }
+
+        float speed = GameManager.Instance.GetFinalGameSpeed();
+
+        // Difficulty 0 -> 1
+        float difficulty = Mathf.InverseLerp(
+            minDifficultySpeed,
+            maxDifficultySpeed,
+            speed
+        );
+
+        // Speed càng cao -> khoảng cách càng thấp
+        float distance = Mathf.Lerp(
+            easySpawnDistance,
+            hardSpawnDistance,
+            difficulty
+        );
+
+        // Random nhẹ để gameplay tự nhiên hơn
+        distance += Random.Range(-1.5f, 1.5f);
+
+        // =====================================================
+        // STRESS MODE
+        // =====================================================
+
+        if (GameManager.Instance.spawnRateMultiplier > 1f)
+        {
+            distance *= stressDistanceMultiplier;
+        }
+
+        // =====================================================
+        // SAFE DISTANCE
+        // =====================================================
+
+        distance = Mathf.Max(distance, absoluteMinDistance);
+
+        nextSpawnDistance = distance;
+    }
+
+    // =====================================================
+    // SPAWN OBSTACLE
+    // =====================================================
+
+    private void SpawnObstacle()
+    {
+        GameObject selectedPrefab = SelectObstacle();
+
+        if (selectedPrefab == null) return;
+
+        GameObject obstacle = Instantiate(selectedPrefab);
+
+        obstacle.transform.position += transform.position;
+
+        lastSpawnedObject = selectedPrefab;
+        lastObstaclePosition = obstacle.transform.position;
+
+        hasSpawnedObstacle = true;
+    }
+
+    // =====================================================
+    // SELECT OBSTACLE
+    // =====================================================
+
+    private GameObject SelectObstacle()
+    {
+        if (objects == null || objects.Length == 0)
+        {
+            return null;
+        }
+
+        float totalChance = 0f;
+
+        foreach (SpawnableObject obj in objects)
+        {
+            totalChance += obj.spawnChance;
+        }
+
+        if (totalChance <= 0f)
+        {
+            return null;
+        }
+
+        for (int attempt = 0; attempt < 10; attempt++)
+        {
+            float random = Random.Range(0f, totalChance);
+
+            foreach (SpawnableObject obj in objects)
             {
-                // Check if the selected object is the same as the last spawned object
-                if (lastSpawnedObject != null && obj.prefab == lastSpawnedObject)
+                if (random < obj.spawnChance)
                 {
-                    // If it's the same, skip this iteration and generate a new random spawn chance
-                    Spawn();
-                    return;
+                    // Không spawn liên tục cùng 1 obstacle
+                    if (objects.Length > 1 &&
+                        obj.prefab == lastSpawnedObject)
+                    {
+                        break;
+                    }
+
+                    return obj.prefab;
                 }
-                
-                // Instantiate the chosen obstacle prefab and position it based on the generator's position
-                GameObject obstacle = Instantiate(obj.prefab);
-                obstacle.transform.position += transform.position;
 
-                // Update the last spawned object
-                lastSpawnedObject = obj.prefab;
-
-                // Exit the loop after spawning one object
-                break;
-            }
-            else
-            {
-                // If the spawn chance is not low enough, subtract the object's spawn chance from it
-                spawnChance -= obj.spawnChance;
+                random -= obj.spawnChance;
             }
         }
 
-        // Invoke the Spawn method again after a new random delay within the specified range
-        Invoke(nameof(Spawn), Random.Range(minSpawnRate, maxSpawnRate));
+        return objects[Random.Range(0, objects.Length)].prefab;
+    }
+
+    // =====================================================
+    // SPAWN ITEM
+    // =====================================================
+
+    private void SpawnRandomItem()
+    {
+        if (!hasSpawnedObstacle) return;
+
+        GameObject selectedItem = SelectItem();
+
+        if (selectedItem == null) return;
+
+        for (int attempt = 0; attempt < 10; attempt++)
+        {
+            float randomDistance = Random.Range(
+                minDistanceAfterObstacle,
+                maxDistanceAfterObstacle
+            );
+
+            float randomHeight = Random.Range(
+                minItemHeight,
+                maxItemHeight
+            );
+
+            Vector3 spawnPosition = lastObstaclePosition;
+
+            spawnPosition.x += randomDistance;
+            spawnPosition.y = randomHeight;
+            spawnPosition.z = 0f;
+
+            // =========================================
+            // CHECK COLLISION
+            // =========================================
+
+            bool blocked = Physics2D.OverlapCircle(
+                spawnPosition,
+                itemCheckRadius,
+                LayerMask.GetMask("Obstacle")
+            );
+
+            // =========================================
+            // SAFE POSITION FOUND
+            // =========================================
+
+            if (!blocked)
+            {
+                Instantiate(
+                    selectedItem,
+                    spawnPosition,
+                    Quaternion.identity,
+                    itemParent
+                );
+
+                return;
+            }
+        }
+    }
+
+    // =====================================================
+    // SELECT ITEM
+    // =====================================================
+
+    private GameObject SelectItem()
+    {
+        if (items == null || items.Length == 0)
+        {
+            return null;
+        }
+
+        float totalChance = 0f;
+
+        foreach (SpawnableItem item in items)
+        {
+            totalChance += item.spawnChance;
+        }
+
+        if (totalChance <= 0f)
+        {
+            return null;
+        }
+
+        float random = Random.Range(0f, totalChance);
+
+        foreach (SpawnableItem item in items)
+        {
+            if (random < item.spawnChance)
+            {
+                return item.prefab;
+            }
+
+            random -= item.spawnChance;
+        }
+
+        return null;
     }
 }

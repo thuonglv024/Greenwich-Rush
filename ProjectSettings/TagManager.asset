@@ -5,6 +5,8 @@ TagManager:
   serializedVersion: 2
   tags:
   - Obstacle
+  - Shield
+  - Heart
   layers:
   - Default
   - TransparentFX
@@ -15,7 +17,7 @@ TagManager:
   - 
   - 
   - 
-  - 
+  - Obstacle
   - 
   - 
   - 
@@ -48,6 +50,39 @@ TagManager:
   - name: Rocks
     uniqueID: 377019055
     locked: 0
+  - name: Sky
+    uniqueID: 1517240269
+    locked: 0
+  - name: Clouds
+    uniqueID: 1272296051
+    locked: 0
+  - name: Far Building
+    uniqueID: 1481043013
+    locked: 0
+  - name: Main Building
+    uniqueID: 2136228725
+    locked: 0
+  - name: Gr
+    uniqueID: 3526961293
+    locked: 0
+  - name: Flags
+    uniqueID: 1909723285
+    locked: 0
+  - name: Obstacle
+    uniqueID: 3069399813
+    locked: 0
   - name: Player
     uniqueID: 3653064401
+    locked: 0
+  - name: flag2
+    uniqueID: 3454237465
+    locked: 0
+  - name: linkGr
+    uniqueID: 168474655
+    locked: 0
+  - name: Banner
+    uniqueID: 38977179
+    locked: 0
+  - name: UI
+    uniqueID: 2435428243
     locked: 0
